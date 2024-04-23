@@ -34,25 +34,26 @@ Before you begin, make sure you have the following installed:
 ### Setting up the Python Environment
 
 1. **Install Python dependencies**:
-    1.When in the QarTool-Project directory
-    2.Navigate to the Python script directory and install required packages.
+    When in the QarTool-Project directory,
+    navigate to the Python script directory and install required packages.
     -------------------------------------
         cd Helsinki-marianMT
         pip install -r requirements.txt
     -------------------------------------
 
 2. **Setup Javascript Environment**:
-    1.When in the QarTool-Project directory
-    2.Navigate to qartool
-    3.install npm
+    When in the QarTool-Project directory,
+    navigate to qartool and
+    install npm
     -------------------------------------
         cd qartool
         npm install
+        npm i @symbo.ls/cli@latest -g
     -------------------------------------
 
 3. **Running The Application On Localhost**:
-    1.When in the QarTool-Project directory
-    2.Navigate to qartool
+    When in the QarTool-Project directory,
+    navigate to qartool
     -------------------------------------
         cd qartool
         npm run start-all
