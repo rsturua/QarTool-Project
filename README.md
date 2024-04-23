@@ -39,6 +39,7 @@ Before you begin, make sure you have the following installed:
     -------------------------------------
         cd Helsinki-marianMT
         pip install -r requirements.txt
+        cd -
     -------------------------------------
 
 2. **Setup Javascript Environment**:
@@ -55,7 +56,6 @@ Before you begin, make sure you have the following installed:
     When in the QarTool-Project directory,
     navigate to qartool
     -------------------------------------
-        cd qartool
         npm run start-all
     -------------------------------------
 This should start the application on localhost: 
