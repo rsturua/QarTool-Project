@@ -1,17 +1,19 @@
-import { main } from './main';
 import { dictionary } from './dictionary';
-import { translate } from './translate';
-import { notable_georgian_projects } from './notable_georgian_projects';
+import { main } from './main';
 import { history } from './history';
-import { research } from './research';
+import { translate } from './translate';
 import { convert } from './convert';
+import { research } from './research';
+import { vepkhistqaosani } from './vepkhistqaosani';
+import { notable_georgian_projects } from './notable_georgian_projects';
 export default {
-      '/': main,
-'/dictionary': dictionary,
-'/translate': translate,
-'/notable_georgian_projects': notable_georgian_projects,
+      '/dictionary': dictionary,
+'/': main,
 '/history': history,
-'/research': research,
+'/translate': translate,
 '/convert': convert,
+'/research': research,
+'/vepkhistqaosani': vepkhistqaosani,
+'/notable_georgian_projects': notable_georgian_projects,
 
     }

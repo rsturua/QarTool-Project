@@ -8,6 +8,15 @@ export const convert = {
     props: {
       padding: 'D1',
     },
+    Hgroup: {
+      margin: '-C1 X B2',
+      H: {
+        text: 'Georgian Script Converter',
+      },
+      P: {
+        text: 'Please enter what you want to convert below',
+      },
+    },
     Textarea: {
       width: '100%',
       minWidth: '100%',
@@ -79,9 +88,10 @@ export const convert = {
         theme: 'elevated',
         round: 'Z2',
         padding: 'A B',
-        widthRange: 'I',
+        widthRange: '100%',
         width: '100%',
-        margin: 'B 0',
+        margin: 'A 0',
+        fontSize: 'A2',
         text: '{{ converted_text }}',
       },
     },

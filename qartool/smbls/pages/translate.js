@@ -8,6 +8,15 @@ export const translate = {
     props: {
       padding: 'D1',
     },
+    Hgroup: {
+      margin: '-C1 X B2',
+      H: {
+        text: 'QarTool Translator',
+      },
+      P: {
+        text: 'Please enter what you want to translte below',
+      },
+    },
     Textarea: {
       onInput: async (ev, el, s, ctx) => {
         s.update({
@@ -21,9 +30,8 @@ export const translate = {
       alignSelf: 'start',
       padding: 'A B2',
       onClick: async (ev, el, s, ctx) => {
-        const isLocal = location.hostname === 'localhost'
-        const {fetchHelsinki, fetchRati} = ctx.utils
-        const translation = await (isLocal ? fetchRati : fetchHelsinki)(s.translation_text)
+        const fetchRati = ctx.utils.fetchRati
+        const translation = await fetchRati(s.translation_text)
         s.update({
           translation
         })

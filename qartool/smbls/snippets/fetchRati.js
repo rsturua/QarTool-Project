@@ -20,7 +20,7 @@ export const fetchRati = async (textToTranslate = 'Hello, how are you?') => {
         .then(data => {
           // Extracting translated text from the response
           console.log("Translated text:", data);
-          const translatedText = data.translated_text; 
+          const translatedText = data.translated_text; // Adjusting path according to Hugging Face response structure
           return translatedText;
         })
         .catch(error => {

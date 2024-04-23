@@ -35,6 +35,8 @@ export const History = {
         },
     onUpdate: (el, s, ctx, opts) => {
           const current = s.parent.activeSlide
+          console.log('banner')
+          console.log(s.parent)
           const isActive = parseInt(el.key) === current
           if (isActive) {
             el.props.scrollToIfCurrent(el, s, ctx, opts)
@@ -119,6 +121,8 @@ export const History = {
               const key = el.parent.parent.key
               s.parent.update({
                 activeSlide: parseInt(key) - 1
+              }, {
+                preventUpdateTriggerStateUpdate: true
               })
             },
       },
@@ -131,5 +135,8 @@ export const History = {
       flow: 'row-reverse',
       align: 'center space-between',
     },
+  },
+  BannerImg: {
+    zIndex: 1,
   },
 };

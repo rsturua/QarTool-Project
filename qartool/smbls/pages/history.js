@@ -6,10 +6,13 @@ export const history = {
     width: '100vw',
     minHeight: '100%',
   },
-  state: 'history',
+  state: (el) => ({
+        ...el.parent.state.history,
+        activeSlide: 0,
+      }),
   Layout: {
     props: {
-      zIndex: 2,
+      zIndex: 19,
       position: 'relative',
       overflow: 'unset',
     },

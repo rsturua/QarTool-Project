@@ -4,9 +4,8 @@ export const RadioSteps = {
   ],
   props: {
     gap: 'Z',
-    padding: 'C B2',
+    padding: 'C E1',
     width: '100%',
-    maxWidth: 'J1',
     overflow: 'auto hidden',
     margin: 'auto auto -',
   },
@@ -14,6 +13,11 @@ export const RadioSteps = {
     extend: 'RadioStep',
     props: (el, s) => ({
           whiteSpace: 'nowrap',
+          isActive: s.parent.activeSlide === parseInt(el.key),
+
+          ProgressLine: {
+            isActive: s.parent.activeSlide === parseInt(el.key),
+          },
           RadioMark: {
             isActive: s.parent.activeSlide === parseInt(el.key),
           },
@@ -28,9 +32,36 @@ export const RadioSteps = {
               hide: true,
             },
           },
+
           onClick: (ev, el, s) => s.parent.update({
             activeSlide: parseInt(el.key)
-          })
+          }, {
+            preventUpdateTriggerStateUpdate: true
+          }),
+
+          scrollToIfCurrent: (el, s, ctx, opts) => {
+            const node = el.node
+
+            window.requestAnimationFrame(() => {
+              node.scrollIntoView({
+                behavior: 'smooth',
+                block: 'nearest',
+                inline: 'nearest'
+              })
+              // preventUpdateTriggerStateUpdate
+            })
+          },
+
+          onUpdate: (el, s, ctx, opts) => {
+            const current = s.parent.activeSlide
+            const isActive = parseInt(el.key) === current
+            // console.log('step')
+            // console.log(el.key, s.parent)
+            // console.log(isActive)
+            if (isActive) {
+              el.props.scrollToIfCurrent(el, s, ctx, opts)
+            }
+          },
         }),
   },
   $stateCollection: ({

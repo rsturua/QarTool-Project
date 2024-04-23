@@ -10,7 +10,7 @@ export const research = {
   Layout: {
     state: 'research',
     props: {
-      zIndex: 2,
+      zIndex: 19,
       position: 'relative',
       overflow: 'unset',
     },
