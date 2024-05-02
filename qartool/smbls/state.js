@@ -625,6 +625,7 @@ export default {
       },
     },
   },
-  route: '/state/research',
-  routeInContent: '/research',
+  route: '/state/vephkhistkaosani',
+  routeInContent: '/vephkhistkaosani',
+  debugging: false,
 };

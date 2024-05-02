@@ -1,4 +1,4 @@
-# QarTool-Project Main Setup 
+# QarTool-Project
 
 **********************************************
 Welcome to QarTool! 
@@ -24,7 +24,7 @@ This project consists of a web-based front-end application (`qartool`) and a Pyt
 
 Before you begin, make sure you have the following installed:
 - [Node.js](https://nodejs.org/) (which includes npm)
-- [Python](https://www.python.org/downloads/) (version 3.x)
+- [Python](https://www.python.org/downloads/) (version 3.11.7)
 
 
 ==================================================================================
@@ -34,28 +34,27 @@ Before you begin, make sure you have the following installed:
 ### Setting up the Python Environment
 
 1. **Install Python dependencies**:
-    When in the QarTool-Project directory,
-    navigate to the Python script directory and install required packages.
+    1.When in the QarTool-Project directory
+    2.Navigate to the Python script directory and install required packages.
     -------------------------------------
         cd Helsinki-marianMT
         pip install -r requirements.txt
-        cd -
     -------------------------------------
 
 2. **Setup Javascript Environment**:
-    When in the QarTool-Project directory,
-    navigate to qartool and
-    install npm
+    1.When in the QarTool-Project directory
+    2.Navigate to qartool
+    3.install npm
     -------------------------------------
         cd qartool
         npm install
-        npm i @symbo.ls/cli@latest -g
     -------------------------------------
 
 3. **Running The Application On Localhost**:
-    When in the QarTool-Project directory,
-    navigate to qartool
+    1.When in the QarTool-Project directory
+    2.Navigate to qartool
     -------------------------------------
+        cd qartool
         npm run start-all
     -------------------------------------
 This should start the application on localhost: 

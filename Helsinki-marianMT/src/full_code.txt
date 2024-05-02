@@ -1,0 +1,999 @@
+import csv
+import string
+import os
+import re
+
+def clean_sentence(sentence):
+    unwanted_chars = r"[\(\)\{\}/]"
+    sentence = re.sub(unwanted_chars, '', sentence)
+    # add period at the end if not present
+    if sentence.strip() and sentence.strip()[-1] not in string.punctuation:
+        sentence += '.'
+    return sentence
+
+def create_parallel_corpus(ka_file, en_file, output_file):
+    # header
+    write_header = not os.path.exists(output_file) or os.stat(output_file).st_size == 0
+    
+    # read sentences from files
+    with open(ka_file, 'r', encoding='utf-8') as ka_f, \
+         open(en_file, 'r', encoding='utf-8') as en_f:
+        ka_sentences = ka_f.readlines()
+        en_sentences = en_f.readlines()
+
+    # number of sentences matching
+    if len(ka_sentences) != len(en_sentences):
+        raise ValueError("The number of sentences in Georgian and English files don't match.")
+
+    # write to file
+    with open(output_file, 'a', newline='', encoding='utf-8') as csv_file:
+        writer = csv.writer(csv_file)
+        if write_header:
+            writer.writerow(['georgian', 'english'])  
+        for ka_sentence, en_sentence in zip(ka_sentences, en_sentences):
+            ka_sentence = clean_sentence(ka_sentence.strip())  # cleaning
+            en_sentence = clean_sentence(en_sentence.strip())  
+            writer.writerow([ka_sentence, en_sentence])
+
+create_parallel_corpus('data/ka_corpus.txt', 'data/en_corpus.txt', 'data/parallel_corpus.csv')
+
+import csv
+import string
+
+def add_period_if_needed(sentence):
+    # add period at the end if not present
+    if sentence.strip() and sentence.strip()[-1] not in string.punctuation:
+        sentence += '.'
+
+    return sentence
+
+def create_test_data(georgian_file, english_file, output_file):
+    # read sentences from files
+    with open(georgian_file, 'r', encoding='utf-8') as georgian_f, \
+         open(english_file, 'r', encoding='utf-8') as english_f:
+        georgian_sentences = georgian_f.readlines()
+        english_sentences = english_f.readlines()
+
+    if len(georgian_sentences) != len(english_sentences):
+        raise ValueError("Number of sentences in Georgian and English files don't match.")
+
+    # write to file
+    with open(output_file, 'w', newline='', encoding='utf-8') as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(['georgian', 'english'])  
+        for georgian_sentence, english_sentence in zip(georgian_sentences, english_sentences):
+            georgian_sentence = georgian_sentence.strip()  # whitespace
+            english_sentence = english_sentence.strip()  
+            writer.writerow([georgian_sentence, english_sentence])
+
+
+create_test_data('data/testka.txt', 'data/testen.txt', 'data/test_data.csv')
+
+import os
+import csv
+import torch
+import datetime
+from transformers import MarianMTModel, MarianTokenizer
+from datasets import load_dataset
+from torch.utils.data import DataLoader, Dataset
+from evaluate import load
+
+def log_results(results, iteration, file_path='outputs/evaluation_log.csv'):
+    date = datetime.datetime.now().strftime("%Y-%m-%d")
+    write_header = not os.path.exists(file_path)
+    
+    with open(file_path, mode='a', newline='') as file:
+        fieldnames = ['date', 'iteration', 'score', 'sys_len', 'ref_len', 'precisions', 'bp', 'counts', 'totals']
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        if write_header:
+            writer.writeheader()
+        
+        results['date'] = date
+        results['iteration'] = iteration
+        writer.writerow(results)
+
+class TranslationDataset(Dataset):
+    def __init__(self, encoded_dataset):
+        self.encoded_dataset = encoded_dataset
+
+    def __len__(self):
+        return len(self.encoded_dataset)
+
+    def __getitem__(self, idx):
+        return {
+            'input_ids': torch.tensor(self.encoded_dataset[idx]['input_ids']),
+            'attention_mask': torch.tensor(self.encoded_dataset[idx]['attention_mask']),
+            'labels': torch.tensor(self.encoded_dataset[idx]['labels'])
+        }
+
+def preprocess_function(examples, tokenizer):
+    model_inputs = tokenizer(
+        examples['georgian'],
+        max_length=512,
+        truncation=True,
+        padding="max_length"
+    )
+    labels = tokenizer(
+        examples['english'],
+        max_length=512,
+        truncation=True,
+        padding="max_length"
+    )
+    model_inputs['labels'] = labels['input_ids']
+    return model_inputs
+
+def evaluate_model(model, tokenizer, tokenized_dataset):
+    metric = load("sacrebleu", module_type="metric")
+    model.eval()
+    predictions = []
+    references = []
+    dataloader = DataLoader(tokenized_dataset, batch_size=16)
+
+    for batch in dataloader:
+        input_ids = batch['input_ids'].to(model.device)
+        attention_mask = batch['attention_mask'].to(model.device)
+        labels = batch['labels'].to(model.device)
+
+        with torch.no_grad():
+            outputs = model.generate(input_ids, attention_mask=attention_mask)
+
+        decoded_preds = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+
+        predictions.extend(decoded_preds)
+        references.extend([[label] for label in decoded_labels])
+
+    result = metric.compute(predictions=predictions, references=references)
+    return result
+
+def main():
+    model_name = 'models/final_model'
+    tokenizer = MarianTokenizer.from_pretrained(model_name)
+    model = MarianMTModel.from_pretrained(model_name)
+
+    test_data = load_dataset('csv', data_files={'test': 'data/test_data.csv'})
+    tokenized_test = test_data['test'].map(lambda x: preprocess_function(x, tokenizer), batched=True)
+    tokenized_test_dataset = TranslationDataset(tokenized_test)
+
+    # iteration index
+    iteration = 1
+    if os.path.exists('outputs/evaluation_log.csv'):
+        with open('outputs/evaluation_log.csv', 'r') as file:
+            last_line = list(csv.reader(file))[-1]
+            iteration = int(last_line[1]) + 1  
+
+    results = evaluate_model(model, tokenizer, tokenized_test_dataset)
+    log_results(results, iteration)  # log results
+
+if __name__ == "__main__":
+    main()
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+import re
+
+def is_mostly_english(text):
+    """Check if the text consists mostly of Latin characters."""
+    latin_letters = re.findall(r'[a-zA-Z]', text)
+    return len(latin_letters) / len(text) > 0.5  # check for latin 
+
+def clean_text(text):
+    """Remove unwanted characters and ensure text is a string."""
+    if not isinstance(text, str):
+        text = str(text)
+    
+    text = re.sub(r"[\[\]{}()\\/\|]", "", text)
+    
+    if any(char.isdigit() for char in text):
+        return None
+    return text
+
+def preprocess_texts(georgian_text, english_text):
+    """Process both texts and check conditions for removal."""
+    georgian_text = clean_text(georgian_text)
+    english_text = clean_text(english_text)
+    
+    if georgian_text is None or english_text is None:
+        return None, None
+    
+    if is_mostly_english(georgian_text) and is_mostly_english(english_text):
+        return None, None
+    
+    return georgian_text, english_text
+
+def split_data(input_file, train_output, validation_output, test_size=0.2, random_state=42):
+    df = pd.read_csv(input_file)
+
+    processed_texts = df.apply(lambda row: preprocess_texts(row['georgian'], row['english']), axis=1)
+    df['georgian'], df['english'] = zip(*processed_texts)
+    df.dropna(inplace=True)
+
+    # split the data into training and validation sets
+    train_df, validation_df = train_test_split(df, test_size=test_size, random_state=random_state)
+    
+    # save
+    train_df.to_csv(train_output, index=False)
+    validation_df.to_csv(validation_output, index=False)
+
+if __name__ == "__main__":
+    input_file = 'data/parallel_corpus.csv'
+    train_output = 'data/training_data.csv'
+    validation_output = 'data/validation_data.csv'
+    
+    split_data(input_file, train_output, validation_output)
+
+from flask import Flask, request, jsonify
+from transformers import MarianMTModel, MarianTokenizer
+from flask_cors import CORS
+import os
+
+app = Flask(__name__)
+CORS(app)  # -- CORS --
+
+base_dir = os.path.dirname(os.path.abspath(__file__))
+model_path = model_path = os.path.join(base_dir, '..', 'models', 'final_model')
+tokenizer = MarianTokenizer.from_pretrained(model_path)
+model = MarianMTModel.from_pretrained(model_path)
+
+def translate_georgian_to_english(text):
+    """Translates Georgian text to English."""
+    encoded_georgian = tokenizer(text, return_tensors="pt", truncation=True, padding="max_length", max_length=512)
+    translated_tokens = model.generate(**encoded_georgian)
+    translation = tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
+    return translation
+
+@app.route('/', methods=['POST'])
+def translate():
+    """Endpoint to translate text from Georgian to English and return both texts."""
+    data = request.json
+    georgian_text = data.get('text')
+    if not georgian_text:
+        return jsonify({'error': 'No text provided'}), 400
+
+    translation = translate_georgian_to_english(georgian_text)
+    return jsonify({
+        'original_text': georgian_text,
+        'translated_text': translation
+    })
+
+if __name__ == "__main__":
+    app.run(debug=True, host='0.0.0.0', port=5001)  # port 
+
+from transformers import MarianMTModel, MarianTokenizer, Trainer, TrainingArguments, TrainerCallback
+from datasets import load_dataset
+from accelerate import Accelerator
+import csv
+import os
+
+class CSVLoggerCallback(TrainerCallback):
+    def __init__(self, csv_file='outputs/training_output.csv', summary_file='outputs/summary_training_data.csv'):
+        self.csv_file = csv_file
+        self.summary_file = summary_file
+        os.makedirs(os.path.dirname(csv_file), exist_ok=True)
+        os.makedirs(os.path.dirname(summary_file), exist_ok=True)
+        
+        # create format for headers if files do not exist
+        if not os.path.isfile(csv_file):
+            with open(csv_file, mode='w', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow(['iteration', 'epoch', 'eval_loss', 'eval_runtime', 'eval_samples_per_second', 'eval_steps_per_second'])
+        if not os.path.isfile(summary_file):
+            with open(summary_file, mode='w', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow(['iteration', 'epoch', 'train_runtime', 'train_samples_per_second', 'train_steps_per_second', 'train_loss'])
+        
+        # iteration 
+        self.iteration = self.determine_next_iteration()
+
+    def determine_next_iteration(self):
+        last_iter_training = 0
+        last_iter_summary = 0
+        
+        #last iteration from training 
+        if os.path.isfile(self.csv_file):
+            with open(self.csv_file, mode='r', newline='') as file:
+                lines = list(csv.DictReader(file))
+                if lines:
+                    last_iter_training = int(lines[-1]['iteration'])
+        
+        #last iteration from summary 
+        if os.path.isfile(self.summary_file):
+            with open(self.summary_file, mode='r', newline='') as file:
+                lines = list(csv.DictReader(file))
+                if lines:
+                    last_iter_summary = int(lines[-1]['iteration'])
+        
+        # iteration index
+        return max(last_iter_training, last_iter_summary) + 1
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        # metrics
+        if logs and 'eval_loss' in logs:
+            with open(self.csv_file, mode='a', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow([
+                    self.iteration,
+                    state.epoch,
+                    logs.get('eval_loss', ''),
+                    logs.get('eval_runtime', ''),
+                    logs.get('eval_samples_per_second', ''),
+                    logs.get('eval_steps_per_second', '')
+                ])
+
+    def on_train_end(self, args, state, control, **kwargs):
+        logs = state.log_history[-1]
+        with open(self.summary_file, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([
+                self.iteration,
+                state.epoch,
+                logs.get('train_runtime', ''),
+                logs.get('train_samples_per_second', ''),
+                logs.get('train_steps_per_second', ''),
+                logs.get('train_loss', '')
+                
+            ])
+        self.iteration += 1 
+
+def main():
+    model_name = 'Helsinki-NLP/opus-mt-ka-en'
+    tokenizer = MarianTokenizer.from_pretrained(model_name)
+    model = MarianMTModel.from_pretrained(model_name)
+
+    dataset = load_dataset('csv', data_files={'train': 'data/training_data.csv', 'validation': 'data/validation_data.csv'})
+
+    def preprocess_function(examples):
+    # tokenize w padding and truncation
+        model_inputs = tokenizer(examples['georgian'], max_length=512, truncation=True, padding="max_length")
+        with tokenizer.as_target_tokenizer():
+            labels = tokenizer(examples['english'], max_length=512, truncation=True, padding="max_length")
+        model_inputs['labels'] = labels['input_ids']
+        return model_inputs
+
+    tokenized_datasets = dataset.map(preprocess_function, batched=True)
+
+    accelerator = Accelerator()
+
+    training_args = TrainingArguments(
+        output_dir='models/checkpoints',
+        evaluation_strategy="epoch",
+        learning_rate=2e-5,
+        per_device_train_batch_size=16,
+        weight_decay=0.01,
+        save_total_limit=2,
+        num_train_epochs=3
+    )
+
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=tokenized_datasets['train'],
+        eval_dataset=tokenized_datasets['validation'],
+        tokenizer=tokenizer,
+        callbacks=[CSVLoggerCallback()]
+    )
+
+    trainer = accelerator.prepare(trainer)
+    trainer.train()
+
+    model.save_pretrained('models/final_model')
+    tokenizer.save_pretrained('models/final_model')
+
+if __name__ == "__main__":
+    main()
+ 
+ from transformers import MarianMTModel, MarianTokenizer
+import random
+import os
+
+def translate_georgian_to_english(text, model_path='models/final_model'):
+    # load the trained model and tokenizer
+    tokenizer = MarianTokenizer.from_pretrained(model_path)
+    model = MarianMTModel.from_pretrained(model_path)
+
+    # tokenize 
+    encoded_georgian = tokenizer(text, return_tensors="pt", truncation=True, padding="max_length")
+
+    # create translation
+    translated_tokens = model.generate(**encoded_georgian, max_length=512)
+
+    # decode tokens
+    translation = tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
+
+    return translation
+
+def translate_from_dataset(num_sentences, dataset_path='data/test_data.csv'):
+    # load test
+    with open(dataset_path, 'r', encoding='utf-8') as file:
+        lines = [line.strip() for line in file if line.strip()]
+
+    # random, full stop
+    selected_lines = random.sample(lines, min(num_sentences, len(lines)))
+    georgian_sentences = [line.split('.', 1)[0] + '.' for line in selected_lines]  # get parts including first full stop
+
+    # translate and format
+    translation_pairs = []
+    for idx, line in enumerate(georgian_sentences, 1):
+        translation = translate_georgian_to_english(line)
+        translation_pairs.append(f"{idx} - {line}\n{translation}\n")
+
+    return translation_pairs
+
+def main():
+    #translator menu 
+    print("Choose an option:")
+    print("1 - User input")
+    print("2 - Translate from dataset")
+    choice = input("Enter number (1/2): ")
+
+    if choice == '1':
+        georgian_text = input("Please enter Georgian text to translate to English: ")
+        translation = translate_georgian_to_english(georgian_text)
+        print("Translated text:", translation)
+    elif choice == '2':
+        num_sentences = int(input("Enter the number of sentences to translate: "))
+
+        with open('data/test_data.csv', 'r', encoding='utf-8') as file:
+            total_sentences = sum(1 for line in file if line.strip())
+
+        if num_sentences > total_sentences:
+            print(f"Error: The number entered exceeds the total number of sentences in the dataset ({total_sentences}).")
+        elif num_sentences > 60:
+            print("Error: The number entered is greater than the maximum allowed.")
+        else:
+            translation_pairs = translate_from_dataset(num_sentences)
+            print("Translated sentences:")
+            for pair in translation_pairs:
+                print(pair)
+    else:
+        print("Invalid choice. Please enter 1 or 2.")
+
+if __name__ == "__main__":
+    main()
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import ast
+import numpy as np
+
+def load_data(file_path):
+    try:
+        data = pd.read_csv(file_path)
+        if 'precisions' in data.columns:
+            data['precisions'] = data['precisions'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+        return data
+    except Exception as e:
+        print(f"Failed to load data from {file_path}: {e}")
+        return pd.DataFrame()  
+
+# file paths
+evaluation_data = load_data('/Users/ratisturua/Desktop/Rati Sturua Individual Project/Helsinki-marianMT/outputs/evaluation_log.csv')
+training_data = load_data('/Users/ratisturua/Desktop/Rati Sturua Individual Project/Helsinki-marianMT/outputs/training_output.csv')
+summary_data = load_data('/Users/ratisturua/Desktop/Rati Sturua Individual Project/Helsinki-marianMT/outputs/summary_training_data.csv')
+
+# segment
+segments = {
+    '1-11': ('blue', 'o'), 
+    '12-20': ('green', 's'),  
+    '21-28': ('red', 'x')   
+}
+
+
+evaluation_data['segment'] = pd.cut(evaluation_data['iteration'], bins=[0, 11, 20, 28], labels=['1-11', '12-20', '21-28'])
+segment_scores = evaluation_data.groupby('segment')['score'].mean()
+
+# average BLEU 
+plt.figure(figsize=(10, 5))
+bars = plt.bar(segment_scores.index, segment_scores.values, color=['blue', 'green', 'red'])
+plt.xlabel('Iterations (Data segments treated as folds)')
+plt.ylabel('Average BLEU Score')
+plt.title('Average BLEU Score Evaluation by Data Segments')
+
+for bar, score in zip(bars, segment_scores):
+    yval = bar.get_height()
+    plt.text(bar.get_x() + bar.get_width()/2, yval, round(score, 2), ha='center', va='bottom')
+
+plt.grid(True)
+plt.savefig('/Users/ratisturua/Desktop/Rati Sturua Individual Project/Helsinki-marianMT/outputs/graphs/Average BLEU for Segment.png')
+plt.show()
+
+# Plot BLEU over Evaluations 
+plt.figure(figsize=(12, 6))
+for key, (color, marker) in segments.items():
+    range_start, range_end = map(int, key.split('-'))
+    segment_data = evaluation_data[(evaluation_data['iteration'] >= range_start) & (evaluation_data['iteration'] <= range_end)]
+    plt.plot(segment_data['iteration'], segment_data['score'], marker=marker, linestyle='-', color=color, label=f'Iterations: {key}')
+
+plt.title('Model BLEU Score Over Evaluations by Data Size')
+plt.xlabel('Evaluation Instance')
+plt.ylabel('BLEU Score')
+plt.legend(title='Data Size Periods')
+plt.grid(True)
+plt.savefig('/Users/ratisturua/Desktop/Rati Sturua Individual Project/Helsinki-marianMT/outputs/graphs/bleu_score_plot_segments.png')
+plt.show()
+
+# Plot Train % Evals Loss over Epochs 
+plt.figure(figsize=(12, 6))
+if not training_data.empty:
+    grouped = training_data.groupby(['iteration', 'epoch']).agg({'eval_loss': ['mean', 'std']}).reset_index()
+    grouped.columns = ['iteration', 'epoch', 'mean_eval_loss', 'std_eval_loss']
+    
+    for iteration in grouped['iteration'].unique():
+        subset = grouped[grouped['iteration'] == iteration]
+        plt.errorbar(subset['epoch'], subset['mean_eval_loss'], yerr=subset['std_eval_loss'], fmt='o-', label=f'{iteration}')
+
+    plt.xticks([1, 2, 3]) 
+    plt.title('Evaluation Loss Per Epoch Over Training')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))  
+    plt.grid(True)
+    plt.savefig('/Users/ratisturua/Desktop/Rati Sturua Individual Project/Helsinki-marianMT/outputs/graphs/evaluation_loss_plot_with_std.png')
+    plt.show()
+
+# Plot Sum train Loss over Iterations
+plt.figure(figsize=(12, 6))
+if not summary_data.empty:
+    plt.plot(summary_data['iteration'], summary_data['train_loss'], marker='o', linestyle='-', color='green', label='Training Loss per Iteration')
+plt.title('Training Loss Per Iteration')
+plt.xlabel('Iteration')
+plt.ylabel('Loss')
+plt.legend()
+plt.grid(True)
+plt.savefig('/Users/ratisturua/Desktop/Rati Sturua Individual Project/Helsinki-marianMT/outputs/graphs/training_loss_plot.png')
+plt.show()
+
+stats = training_data.groupby('iteration')['eval_loss'].agg(['mean', 'std'])
+
+
+# Standard Deviation eval loss
+plt.figure(figsize=(12, 6))
+plt.errorbar(stats.index, stats['mean'], yerr=stats['std'], fmt='-o', capsize=5, label='Eval Loss (Mean with Std Dev)', color='purple')
+plt.xlabel('Iteration')
+plt.ylabel('Evaluation Loss')
+plt.title('Evaluation Loss with Standard Deviation per Iteration')
+plt.xticks(stats.index)  
+plt.legend()
+plt.grid(True)
+plt.savefig('/Users/ratisturua/Desktop/Rati Sturua Individual Project/Helsinki-marianMT/outputs/graphs/eval_loss_std_dev.png')
+plt.show()
+
+
+export const fetchGoogleTranslate = async (textToTranslate = 'This is the text to be translated.') => { 
+      const apiKey = 'AIzaSyCc3Nz4A0VepMShTpK1HpILHtb8AfKa0R4';
+
+      
+      const targetLanguage = 'ka';
+
+      const url = `https://translation.googleapis.com/v3/translate:translate?key=${apiKey}`;
+
+      const data = {
+        contentType: 'text/plain',
+        requests: [{
+          sourceLanguageCode: 'en', 
+          targetLanguageCode: targetLanguage,
+          inputs: [{
+            text: textToTranslate
+          }],
+        }],
+      };
+
+      const options = {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data),
+        
+        mode: 'no-cors'
+      };
+
+      try {
+        const response = await fetch(url, options);
+        const translation = await response.json();
+
+        console.log('Translated text:', translation.translations[0].translatedText);
+        return translation.translations[0].translatedText
+      } catch (error) {
+        console.error('Error:', error);
+      }
+    }
+
+    export const fetchGPT = async (textToTranslate = 'Hello, how are you?') => {
+      
+      const apiKey = 'AIzaSyCc3Nz4A0VepMShTpK1HpILHtb8AfKa0R4'
+      const apiUrl = 'https://translation.googleapis.com/language/translate/v2'
+
+
+      const targetLanguage = 'ka'
+
+      
+      const requestBody = {
+        q: textToTranslate,
+        target: targetLanguage,
+        key: apiKey,
+      }
+
+     
+      return await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+        })
+        .then(response => response.json())
+        .then(data => {
+          
+          console.log("Translated text:", data)
+          const translatedText = data.data.translations[0].translatedText
+          return translatedText
+        })
+        .catch(error => {
+          console.error('Error:', error)
+        })
+    }
+
+    export const fetchRati = async (textToTranslate = 'Hello, how are you?') => {
+      
+      const apiUrl = 'http://localhost:5001';
+
+      
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      const requestBody = {
+        text: textToTranslate,
+      };
+
+      
+      return await fetch(apiUrl, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify(requestBody),
+        })
+        .then(response => response.json())
+        .then(data => {
+          
+          console.log("Translated text:", data);
+          const translatedText = data.translated_text; 
+          return translatedText;
+        })
+        .catch(error => {
+          console.error('Error:', error);
+        });
+    }
+
+export const convert = {
+  extend: [
+    'Layout',
+  ],
+  state: {
+  },
+  content: {
+    props: {
+      padding: 'D1',
+    },
+    Hgroup: {
+      margin: '-C1 X B2',
+      H: {
+        text: 'Georgian Script Converter',
+      },
+      P: {
+        text: 'Please enter what you want to convert below',
+      },
+    },
+    Textarea: {
+      width: '100%',
+      minWidth: '100%',
+      backgroundImage: 'https://files-production-symbols-platform-development-en-d5-u3-p7x0.based.dev/fi4ca179ec/575372ac-2ff2-47e1-98cc-6f47568af787-fea1cf7a-d31c-46e0-9b02-939a74d54892-082c5c98-ec06-4933-8457-ce441c8631c0.png',
+      backgroundSize: '68em',
+      onInput: async (ev, el, s, ctx) => {
+        const anbani = require('anbani')
+        s.update({
+          converted_text: anbani.core.convert(el.node.value, "მხედრული", "ასომთავრული")
+        })
+      },
+    },
+    Flex: {
+      props: {
+        gap: 'C1',
+        childProps: {
+          theme: 'field',
+          round: 'A',
+          fontSize: 'A',
+        },
+      },
+      Select_from: {
+        hide: true,
+        onChange: el => {
+          console.log(el)
+        },
+        options: [
+          {
+            text: 'მხედრული',
+            value: 'mkh',
+          },
+          {
+            text: 'ასომთავრული',
+            value: 'aso',
+          },
+          {
+            text: 'ნუსხური',
+            value: 'nsk',
+          },
+        ],
+      },
+      Select_to: {
+        hide: true,
+        options: [
+          {
+            text: 'მხედრული',
+            value: 'mkh',
+          },
+          {
+            text: 'ასომთავრული',
+            value: 'aso',
+          },
+          {
+            text: 'ნუსხური',
+            value: 'nsk',
+          },
+        ],
+      },
+    },
+    Pre: {
+      if: (el, s) => s.converted_text,
+      props: {
+        ':before': {
+          left: 'C1',
+        },
+        shape: 'tooltip',
+        shapeDirection: 'top',
+        background: 'black 1 +6',
+        theme: 'elevated',
+        round: 'Z2',
+        padding: 'A B',
+        widthRange: '100%',
+        width: '100%',
+        margin: 'A 0',
+        fontSize: 'A2',
+        text: '{{ converted_text }}',
+      },
+    },
+  },
+};
+
+export const history = {
+  extend: 'Flex',
+  props: {
+    flow: 'y',
+    gap: 'C1',
+    width: '100vw',
+    minHeight: '100%',
+  },
+  state: (el) => ({
+        ...el.parent.state.history,
+        activeSlide: 0,
+      }),
+  Layout: {
+    props: {
+      zIndex: 19,
+      position: 'relative',
+      overflow: 'unset',
+    },
+    Footer: null,
+  },
+  content: {
+    HistorySlide: {
+    },
+    RadioSteps: {
+    },
+  },
+  Footer: {
+    width: '100%',
+    maxWidth: '100vw',
+    margin: 'auto - -',
+  },
+};
+
+import { dictionary } from './dictionary';
+import { translate } from './translate';
+import { main } from './main';
+import { research } from './research';
+import { vepkhistqaosani } from './vepkhistqaosani';
+import { history } from './history';
+import { notable_georgian_projects } from './notable_georgian_projects';
+import { convert } from './convert';
+export default {
+      '/dictionary': dictionary,
+'/translate': translate,
+'/': main,
+'/research': research,
+'/vepkhistqaosani': vepkhistqaosani,
+'/history': history,
+'/notable_georgian_projects': notable_georgian_projects,
+'/convert': convert,
+
+    }
+export const main = {
+  extend: 'Layout',
+  content: {
+    props: {
+      alignSelf: 'center',
+      textAlign: 'center',
+      order: 2,
+      margin: '3.5% - -',
+      fontSize: 'B',
+      maxWidth: 'H3',
+    },
+    childExtend: 'P',
+    content: [
+      {
+        text: 'Welcome to QarTool! A research project for Natural Language Processing (NLP) of Georgian Language. ',
+      },
+      {
+        text: 'QarTool is an interactive translation environment for Georgian language. This platform is created to demonstrate the achievements of QarTool-LM Beta - a beta language model designed for translation purposes, specifically created for text translation from Georgian to English. ',
+      },
+      {
+        Span: {
+          text: `If you would like to find out more about QarTool's research, please click below, or navigate to `,
+        },
+        Link: {
+          textDecoration: 'underline',
+          href: '/research',
+          text: 'Research',
+        },
+        Span_2: {
+          text: ' page. Enjoy!',
+        },
+      },
+    ],
+  },
+};
+
+export const notable_georgian_projects = {
+  extend: 'Layout',
+  state: '~/notable_georgian_projects',
+  content: {
+    props: {
+      padding: 'C1 D1',
+    },
+    H3: {
+      margin: '0',
+      text: '{{ title }}',
+    },
+    P: {
+      margin: '-Z2 - B1',
+      text: '{{ description }}',
+    },
+    ContacInfosThree: {
+    },
+  },
+};
+
+
+export const research = {
+  extend: 'Flex',
+  props: {
+    flow: 'y',
+    gap: 'C1',
+    width: '100vw',
+    minHeight: '100%',
+  },
+  state: 'research',
+  Layout: {
+    state: 'research',
+    props: {
+      zIndex: 19,
+      position: 'relative',
+      overflow: 'unset',
+    },
+    Footer: null,
+  },
+  content: {
+    HistorySlide: {
+    },
+    RadioSteps: {
+    },
+  },
+  Footer: {
+    width: '100%',
+    maxWidth: '100vw',
+    margin: 'auto - -',
+  },
+};
+
+export const translate = {
+  extend: [
+    'Layout',
+  ],
+  state: {
+  },
+  content: {
+    props: {
+      padding: 'D1',
+    },
+    Hgroup: {
+      margin: '-C1 X B2',
+      H: {
+        text: 'QarTool Translator',
+      },
+      P: {
+        text: 'Please enter what you want to translte below',
+      },
+    },
+    Textarea: {
+      onInput: async (ev, el, s, ctx) => {
+        s.update({
+          translation_text: el.node.value
+        })
+      },
+    },
+    Button: {
+      theme: 'primary',
+      text: 'Translate',
+      alignSelf: 'start',
+      padding: 'A B2',
+      onClick: async (ev, el, s, ctx) => {
+        const fetchRati = ctx.utils.fetchRati
+        const translation = await fetchRati(s.translation_text)
+        s.update({
+          translation
+        })
+      },
+    },
+    Pre: {
+      if: (el, s) => s.translation,
+      props: {
+        ':before': {
+          left: 'C1',
+        },
+        shape: 'tooltip',
+        shapeDirection: 'top',
+        background: 'black 1 +6',
+        theme: 'elevated',
+        round: 'Z2',
+        padding: 'A B',
+        widthRange: 'I',
+        width: '100%',
+        margin: 'B 0',
+        text: '{{ translation }}',
+      },
+    },
+  },
+};
+
+export const vepkhistqaosani = {
+  extend: 'Layout',
+  content: {
+    state: ({ parent })=> {
+      const s = parent.state
+      const randomNumber = Math.round(Math.random() * 71)
+      const data = s.vephkhistkaosani.data
+      const ka = data.ka[randomNumber]
+      const en = data.en[randomNumber]
+      return {ka, en}
+    },
+    props: {
+      padding: 'D2',
+    },
+    Label: {
+      alignSelf: 'start',
+      theme: 'dialog',
+      text: `The Knight in the Panther's Skin`,
+    },
+    H3: {
+      props: {
+        margin: '- - -A',
+      },
+      pre: {
+        text: '{{ ka }}',
+      },
+    },
+    P: {
+      margin: '0',
+      text: '{{ en }}',
+    },
+  },
+};
